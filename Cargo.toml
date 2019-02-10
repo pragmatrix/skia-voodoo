@@ -1,0 +1,15 @@
+[package]
+name = "skia-voodoo"
+version = "0.1.0"
+authors = ["Armin Sander <armin@replicator.org>"]
+edition = "2018"
+
+[dependencies]
+voodoo = "0.3"
+voodoo_winit = "0.1"
+cgmath = "0.17"
+image = "0.21"
+smallvec = "0.4"
+ordered-float = "1.0"
+tobj = "0.1"
+skia-safe = { path = "../skia-safe", features = ["vulkan"] }
