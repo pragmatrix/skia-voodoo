@@ -1126,7 +1126,7 @@ fn create_depth_resources(device: &Device, command_pool: &CommandPool,
 }
 
 fn create_texture_image(device: &Device, command_pool: &CommandPool)
-        -> VdResult<(Image, DeviceMemory)> {
+        -> VdResult<(Image, DeviceMemory,(u32, u32))> {
     let pixels = image::open(TEXTURE_PATH).unwrap().to_rgba();
     let (tex_width, tex_height) = pixels.dimensions();
     let image_bytes = (tex_width * tex_height * 4) as u64;
@@ -1186,7 +1186,7 @@ fn create_texture_image(device: &Device, command_pool: &CommandPool)
     transition_image_layout(device, command_pool, &texture_image, Format::R8G8B8A8Unorm,
         ImageLayout::TransferDstOptimal, ImageLayout::ShaderReadOnlyOptimal)?;
 
-    Ok((texture_image, texture_image_memory))
+    Ok((texture_image, texture_image_memory,(tex_width, tex_height)))
 }
 
 fn create_texture_image_view(device: Device, image: &Image) -> VdResult<ImageView> {
@@ -1347,8 +1347,8 @@ impl App {
             &command_pool, swapchain.extent().clone())?;
         let framebuffers = create_framebuffers(&device, &render_pass,
             &image_views, &depth_image_view, swapchain.extent().clone())?;
-        let (texture_image, texture_image_memory) = create_texture_image(&device,
-            &command_pool)?;
+        let (texture_image, texture_image_memory, (texture_width, texture_height)) =
+            create_texture_image(&device, &command_pool)?;
         let texture_image_view = create_texture_image_view(device.clone(),
             &texture_image)?;
         let texture_sampler = create_texture_sampler(device.clone())?;
