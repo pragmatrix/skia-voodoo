@@ -5,6 +5,8 @@ extern crate voodoo as vd;
 extern crate voodoo_winit;
 extern crate cgmath;
 
+mod skia;
+
 use std::mem;
 use std::time;
 use std::path::Path;
@@ -1378,6 +1380,13 @@ impl App {
         };
 
         let command_buffer_handles = command_buffers.iter().map(|cb| cb.handle()).collect();
+
+        let context: skia::Context =
+            skia::Context::new(
+                &instance,
+                device.physical_device(),
+                &device,
+                device.queue(0).unwrap());
 
         Ok(App {
             instance,

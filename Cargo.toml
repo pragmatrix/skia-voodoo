@@ -12,4 +12,5 @@ image = "0.21"
 smallvec = "0.4"
 ordered-float = "1.0"
 tobj = "0.1"
+once_cell = "0.1"
 skia-safe = { path = "../skia-safe", features = ["vulkan"] }
