@@ -27,8 +27,7 @@ unsafe extern "C" fn resolve(
     device: bindings::VkDevice)
     -> *const raw::c_void {
 
-    let str = ffi::CStr::from_ptr(name).to_str().unwrap();
-    println!("resolve for {}", str);
+    let get_str = || ffi::CStr::from_ptr(name).to_str().unwrap();
 
     if !device.is_null() {
         let device = device as vks::VkDevice;
@@ -40,7 +39,7 @@ unsafe extern "C" fn resolve(
                 f as _
             },
             None => {
-                println!("device proc resolve for {} failed", str);
+                println!("device proc resolve for {} failed", get_str());
                 ptr::null()
             }
         }
@@ -59,7 +58,7 @@ unsafe extern "C" fn resolve(
                 f as _
             },
             None => {
-                println!("instance proc resolve for {} failed", str);
+                println!("instance proc resolve for {} failed", get_str());
                 ptr::null()
             }
         }
@@ -84,13 +83,6 @@ impl Context {
             GET_DEVICE_PROC_ADDR = Some(get_device_proc_addr);
         }
 
-
-        dbg!((instance.handle().to_raw() as *mut _,
-            physical_device.handle().to_raw() as *mut _,
-            device.handle().to_raw() as *mut _,
-            queue.handle().to_raw() as *mut _,
-            queue.index()));
-
         let backend = unsafe {
             vulkan::BackendContext::new(
                 instance.handle().to_raw() as *mut _,
@@ -102,14 +94,10 @@ impl Context {
 
         let graphics = graphics::Context::new_vulkan(&backend).unwrap();
 
-        dbg!(&graphics);
-
         let ctx = Context {
             backend,
             graphics
         };
-
-        println!("new context3");
 
         ctx
     }

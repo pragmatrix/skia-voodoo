@@ -208,7 +208,13 @@ fn init_instance() -> VdResult<Instance> {
         .application_version((1, 0, 0))
         .engine_name(&eng_name)
         .engine_version((1, 0, 0))
-        .api_version((1, 0, 0))
+        // note: For skia, this _must_ be the actual latest version the vulkan instance
+        // supports (or higher?), for a more proper solution, this value has to be set
+        // by vkEnumerateInstanceVersion. This is because skia configures itself by the
+        // version of the actual physical device, but the getDeviceProcAddr function
+        // won't return these functions until the version number does not match the
+        // device for some reason.
+        .api_version((1, 1, 0))
         .build();
 
     let loader = Loader::new()?;
