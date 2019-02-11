@@ -1387,12 +1387,21 @@ impl App {
 
         let command_buffer_handles = command_buffers.iter().map(|cb| cb.handle()).collect();
 
-        let context: skia::Context =
+        let mut context: skia::Context = {
+
+            let queue = device.queue(0).unwrap();
+
             skia::Context::new(
-                &instance,
-                device.physical_device(),
-                &device,
-                device.queue(0).unwrap());
+                queue.device().instance(),
+                queue.device().physical_device(),
+                queue.device(),
+                queue)
+        };
+
+        let drawing_surface: skia::Surface =
+            skia::Surface::from_texture(
+                &mut context,
+                (&texture_image, &texture_image_memory, (texture_width, texture_height) ));
 
         Ok(App {
             instance,

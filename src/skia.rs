@@ -67,6 +67,7 @@ unsafe extern "C" fn resolve(
 
 impl Context {
 
+    // note: it seems that we can access everything through queue.
     pub fn new(
         instance: &Instance,
         physical_device: &PhysicalDevice,
@@ -104,43 +105,46 @@ impl Context {
 }
 
 #[derive(Debug)]
-struct Surface<'a> {
+pub struct Surface<'a> {
     context: &'a Context,
     surface: skia::Surface
 }
 
 impl<'a> Surface<'a> {
-    pub unsafe fn from_texture(
+    pub fn from_texture(
         context: &'a mut Context,
         (image, image_memory, (width, height)):
         (&Image, &DeviceMemory, (u32, u32)))
         -> Surface<'a> {
         let allocation_size = image.memory_requirements().size();
 
-        let alloc =
+        let alloc = unsafe {
             vulkan::Alloc::new(
-                image_memory.handle().to_raw() as *mut _,
-                0, allocation_size, 0);
+                image_memory.handle().to_raw() as _,
+                0, allocation_size, 0)
+        };
 
-        let image_info =
+        let image_info = unsafe {
             vulkan::ImageInfo::new(
-                image.handle().to_raw() as *mut _,
+                image.handle().to_raw() as _,
                 &alloc,
                 bindings::VkImageTiling::VK_IMAGE_TILING_OPTIMAL,
                 bindings::VkImageLayout::VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 bindings::VkFormat::VK_FORMAT_R8G8B8A8_SRGB,
                 1 /* level count */
-            );
+            )
+        };
 
-        let backend_texture =
-            graphics::BackendTexture::new_vulkan((width, height), &image_info);
+        let backend_texture = unsafe {
+            graphics::BackendTexture::new_vulkan((width, height), &image_info)
+        };
 
         let surface =
             skia::Surface::new_from_backend_texture(
                 &mut context.graphics,
                 &backend_texture,
                 bindings::GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
-                1,
+                /* sample_count */ 1,
                 bindings::SkColorType::kRGBA_8888_SkColorType
             ).unwrap();
 
