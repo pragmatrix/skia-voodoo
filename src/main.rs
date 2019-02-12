@@ -248,8 +248,11 @@ fn find_queue_families(physical_device: &PhysicalDevice, surface: &SurfaceKhr)
             present_family_idx = Some(i);
         }
 
-        if let (Some(gf_idx), Some(pf_idx)) = (graphics_family_idx, present_family_idx) {
-            return Ok(QueueFamilyIndices::new(gf_idx, pf_idx));
+        match (graphics_family_idx, present_family_idx) {
+            (Some(gf_idx), Some(pf_idx)) => {
+                return Ok(QueueFamilyIndices::new(gf_idx, pf_idx));
+            }
+            _ => {}
         }
 
         i += 1;
@@ -293,10 +296,13 @@ fn choose_physical_device(instance: &Instance, surface: &SurfaceKhr)
             break;
         }
     }
-    if let Some(preferred_device) = preferred_device {
-        Ok(preferred_device)
-    } else {
-        panic!("Failed to find a suitable device.");
+    match preferred_device {
+        Some(preferred_device) => {
+            Ok(preferred_device)
+        }
+        None => {
+            panic!("Failed to find a suitable device.");
+        }
     }
 }
 
@@ -407,8 +413,11 @@ fn create_swapchain(surface: SurfaceKhr, device: Device, window_size: Option<Ext
         .present_mode(present_mode)
         .clipped(true);
 
-    if let Some(old_sc) = old_swapchain {
-        bldr.old_swapchain(old_sc.handle());
+    match old_swapchain {
+        Some(old_sc) => {
+            bldr.old_swapchain(old_sc.handle());
+        }
+        None => {}
     }
 
     if queue_family_indices.graphics_family_idx != queue_family_indices.present_family_idx {
@@ -608,8 +617,11 @@ fn create_descriptor_sets(layout: &DescriptorSetLayout,
 fn create_pipeline_layout(device: Device, descriptor_set_layout: Option<&DescriptorSetLayout>)
         -> VdResult<PipelineLayout> {
     let mut layouts = SmallVec::<[_; 8]>::new();
-    if let Some(dsl) = descriptor_set_layout {
-        layouts.push(dsl.handle());
+    match descriptor_set_layout {
+        Some(dsl) => {
+            layouts.push(dsl.handle());
+        }
+        None => {}
     }
 
     PipelineLayout::builder()
@@ -1524,19 +1536,22 @@ impl App {
         let image_index = match acquire_result {
             Ok(idx) => idx,
             Err(res) => {
-                if let ErrorKind::ApiCall(call_res, _fn_name) = res.kind {
-                    if call_res == CallResult::ErrorOutOfDateKhr {
-                        let dims = self.window.get_inner_size().unwrap();
-                        self.recreate_swapchain(Extent2d::builder()
-                            .height(dims.1 as u32)
-                            .width(dims.0 as u32)
-                            .build())?;
-                        return Ok(());
-                    } else {
+                match res.kind {
+                    ErrorKind::ApiCall(call_res, _fn_name) => {
+                        if call_res == CallResult::ErrorOutOfDateKhr {
+                            let dims = self.window.get_inner_size().unwrap();
+                            self.recreate_swapchain(Extent2d::builder()
+                                .height(dims.1 as u32)
+                                .width(dims.0 as u32)
+                                .build())?;
+                            return Ok(());
+                        } else {
+                            panic!("Unable to present swap chain image");
+                        }
+                    }
+                    _ => {
                         panic!("Unable to present swap chain image");
                     }
-                } else {
-                    panic!("Unable to present swap chain image");
                 }
             }
         };
