@@ -16,8 +16,13 @@ void main() {
     // outColor = texture(texSampler, fragTexCoord);
     // outColor = vec4(ceil(texture(texSampler, fragTexCoord)).rgb * fragColor, 1.0);
 
-    if (texture(texSampler, fragTexCoord).rgb == vec3(0.0, 0.0, 0.0)) {
+    vec4 texel = texture(texSampler, fragTexCoord).rgba;
+/*
+    if (texel == vec4(0.0, 0.0, 0.0, 0.0)) {
     	discard;
     }
-    outColor = vec4(ceil(texture(texSampler, fragTexCoord)).rgb * fragColor, 0.1);
+*/
+
+    vec4 fg = vec4(fragColor, 1.0);
+    outColor = texel.rgba /* * fg */;
 }

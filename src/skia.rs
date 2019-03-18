@@ -2,13 +2,12 @@ use voodoo::*;
 use skia_safe::{skia, graphics, graphics::vulkan};
 use std::os::raw;
 use std::{ffi, ptr};
-use skia_safe::bindings;
 use vks;
 use once_cell::sync;
+pub use skia_safe::skia::{Canvas, Path, Paint};
+use std::rc::Rc;
 
-#[derive(Debug)]
 pub struct Context {
-    backend: vulkan::BackendContext,
     graphics: graphics::Context
 }
 
@@ -23,8 +22,8 @@ static mut GET_DEVICE_PROC_ADDR : vks::PFN_vkGetDeviceProcAddr = None;
 
 unsafe extern "C" fn resolve(
     name: *const raw::c_char,
-    instance: bindings::VkInstance,
-    device: bindings::VkDevice)
+    instance: skia_bindings::VkInstance,
+    device: skia_bindings::VkDevice)
     -> *const raw::c_void {
 
     let get_str = || ffi::CStr::from_ptr(name).to_str().unwrap();
@@ -93,29 +92,25 @@ impl Context {
                 queue.index(),
                 Some(resolve)) };
 
-        let graphics = graphics::Context::new_vulkan(&backend).unwrap();
+        let graphics = graphics::Context::from_vulkan(&backend).unwrap();
 
-        let ctx = Context {
-            backend,
+        Context {
             graphics
-        };
-
-        ctx
+        }
     }
 }
 
-#[derive(Debug)]
-pub struct Surface<'a> {
-    context: &'a Context,
+pub struct Surface {
     surface: skia::Surface
 }
 
-impl<'a> Surface<'a> {
+impl Surface {
+
     pub fn from_texture(
-        context: &'a mut Context,
+        context: &mut Context,
         (image, image_memory, (width, height)):
-        (&Image, &DeviceMemory, (u32, u32)))
-        -> Surface<'a> {
+        (&Image, &DeviceMemory, (i32, i32)))
+        -> Surface {
         let allocation_size = image.memory_requirements().size();
 
         let alloc = unsafe {
@@ -128,9 +123,9 @@ impl<'a> Surface<'a> {
             vulkan::ImageInfo::new(
                 image.handle().to_raw() as _,
                 &alloc,
-                bindings::VkImageTiling::VK_IMAGE_TILING_OPTIMAL,
-                bindings::VkImageLayout::VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                bindings::VkFormat::VK_FORMAT_R8G8B8A8_SRGB,
+                skia_bindings::VkImageTiling::VK_IMAGE_TILING_OPTIMAL,
+                skia_bindings::VkImageLayout::VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                skia_bindings::VkFormat::VK_FORMAT_R8G8B8A8_SRGB,
                 1 /* level count */
             )
         };
@@ -140,14 +135,29 @@ impl<'a> Surface<'a> {
         };
 
         let surface =
-            skia::Surface::new_from_backend_texture(
+            skia::Surface::from_backend_texture(
                 &mut context.graphics,
                 &backend_texture,
-                bindings::GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
+                skia_bindings::GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
                 /* sample_count */ 1,
-                bindings::SkColorType::kRGBA_8888_SkColorType
+                skia_bindings::SkColorType::kRGBA_8888_SkColorType
             ).unwrap();
 
-        Surface { context, surface }
+        Surface { surface }
+    }
+
+    pub fn canvas(&mut self) -> &mut skia::Canvas {
+        self.surface.canvas()
+    }
+
+    pub fn flush(&mut self) {
+        self.surface.flush();
+    }
+
+    // Use to retrieve the current layout the image is in.
+    pub fn image_layout(&mut self) -> skia_bindings::VkImageLayout {
+        let texture = self.surface.get_backend_texture(skia_bindings::SkSurface_BackendHandleAccess::kFlushRead_BackendHandleAccess).unwrap();
+        let image_info = texture.get_image_info().unwrap();
+        image_info.layout()
     }
 }

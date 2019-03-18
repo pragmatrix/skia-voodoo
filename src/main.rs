@@ -7,9 +7,8 @@ extern crate cgmath;
 
 mod skia;
 
-use std::mem;
-use std::time;
-use std::path::Path;
+use std::{mem, time, path::Path };
+use std::rc::Rc;
 use std::hash::{Hash, Hasher};
 use std::collections::{HashMap, BTreeSet};
 use std::ffi::{CStr, CString};
@@ -42,6 +41,7 @@ use vd::{vks, util, Result as VdResult, Instance, Device, SurfaceKhr,
     CallResult, PresentInfoKhr, ErrorKind, VertexInputBindingDescription, VertexInputRate,
     VertexInputAttributeDescription};
 use voodoo_winit::winit::{EventsLoop, WindowBuilder, Window, Event, WindowEvent};
+use skia_safe::skia::{PaintStyle, Color};
 
 #[cfg(debug_assertions)]
 pub const ENABLE_VALIDATION_LAYERS: bool = true;
@@ -401,6 +401,10 @@ fn create_swapchain(surface: SurfaceKhr, device: Device, window_size: Option<Ext
     let indices;
 
     let mut bldr = SwapchainKhr::builder();
+
+    dbg!(surface_format.format());
+    dbg!(image_count);
+
     bldr.surface(&surface)
         .min_image_count(image_count)
         .image_format(surface_format.format())
@@ -731,15 +735,18 @@ fn create_graphics_pipeline(device: Device, pipeline_layout: &PipelineLayout,
         .build();
 
     let color_blend_attachment = PipelineColorBlendAttachmentState::builder()
-        .blend_enable(false)
-        .src_color_blend_factor(BlendFactor::One)
-        .dst_color_blend_factor(BlendFactor::Zero)
+        .blend_enable(true)
+        .src_color_blend_factor(BlendFactor::SrcAlpha)
+        .dst_color_blend_factor(BlendFactor::OneMinusSrcAlpha)
         .color_blend_op(BlendOp::Add)
-        .src_alpha_blend_factor(BlendFactor::One)
-        .dst_alpha_blend_factor(BlendFactor::Zero)
+        .src_alpha_blend_factor(BlendFactor::SrcAlpha)
+        .dst_alpha_blend_factor(BlendFactor::OneMinusSrcAlpha)
         .alpha_blend_op(BlendOp::Add)
-        .color_write_mask(ColorComponentFlags::R | ColorComponentFlags::G |
-            ColorComponentFlags::B | ColorComponentFlags::A)
+        .color_write_mask(
+            ColorComponentFlags::R |
+            ColorComponentFlags::G |
+            ColorComponentFlags::B |
+            ColorComponentFlags::A)
         .build();
 
     let attachments = [color_blend_attachment];
@@ -748,7 +755,7 @@ fn create_graphics_pipeline(device: Device, pipeline_layout: &PipelineLayout,
         .logic_op_enable(false)
         .logic_op(LogicOp::Copy)
         .attachments(&attachments)
-        .blend_constants([0.0; 4])
+        .blend_constants([1.0; 4])
         .build();
 
     let shader_stages = &[vert_shader_stage_info, frag_shader_stage_info];
@@ -856,28 +863,42 @@ fn transition_image_layout(device: &Device, command_pool: &CommandPool, image: &
     let source_stage: PipelineStageFlags;
     let destination_stage: PipelineStageFlags;
 
-    if old_layout == ImageLayout::Undefined &&
-            new_layout == ImageLayout::TransferDstOptimal
+    if
+        old_layout == ImageLayout::Undefined &&
+        new_layout == ImageLayout::TransferDstOptimal
     {
         barrier.set_src_access_mask(AccessFlags::empty());
         barrier.set_dst_access_mask(AccessFlags::TRANSFER_WRITE);
         source_stage = PipelineStageFlags::TOP_OF_PIPE;
         destination_stage = PipelineStageFlags::TRANSFER;
-    } else if old_layout == ImageLayout::TransferDstOptimal &&
-            new_layout == ImageLayout::ShaderReadOnlyOptimal
+    } else if
+        old_layout == ImageLayout::TransferDstOptimal &&
+        new_layout == ImageLayout::ShaderReadOnlyOptimal
     {
         barrier.set_src_access_mask(AccessFlags::TRANSFER_WRITE);
-        barrier.set_dst_access_mask(AccessFlags::SHADER_READ);
+        barrier.set_dst_access_mask(AccessFlags::SHADER_READ /* | AccessFlags::MEMORY_READ */);
         source_stage = PipelineStageFlags::TRANSFER;
         destination_stage = PipelineStageFlags::FRAGMENT_SHADER;
-    } else if old_layout == ImageLayout::Undefined &&
-            new_layout == ImageLayout::DepthStencilAttachmentOptimal
-        {
+    } else if
+            old_layout == ImageLayout::Undefined &&
+            new_layout == ImageLayout::DepthStencilAttachmentOptimal {
         barrier.set_src_access_mask(AccessFlags::empty());
-        barrier.set_dst_access_mask(AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ |
+        barrier.set_dst_access_mask(
+            AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ |
             AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE);
         source_stage = PipelineStageFlags::TOP_OF_PIPE;
         destination_stage = PipelineStageFlags::EARLY_FRAGMENT_TESTS;
+    } else if
+        old_layout == ImageLayout::TransferDstOptimal &&
+        new_layout == ImageLayout::General {
+
+        barrier.set_src_access_mask(AccessFlags::TRANSFER_WRITE);
+        barrier.set_dst_access_mask(
+            AccessFlags::SHADER_READ /* |
+            AccessFlags::COLOR_ATTACHMENT_WRITE */ /* | AccessFlags::COLOR_ATTACHMENT_READ */);
+        source_stage = PipelineStageFlags::TRANSFER;
+        destination_stage = PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
+
     } else {
         panic!("unsupported layout transition");
     }
@@ -1138,7 +1159,7 @@ fn create_depth_resources(device: &Device, command_pool: &CommandPool,
 }
 
 fn create_texture_image(device: &Device, command_pool: &CommandPool)
-        -> VdResult<(Image, DeviceMemory,(u32, u32))> {
+        -> VdResult<(Image, DeviceMemory, (i32, i32))> {
     let pixels = image::open(TEXTURE_PATH).unwrap().to_rgba();
     let (tex_width, tex_height) = pixels.dimensions();
     let image_bytes = (tex_width * tex_height * 4) as u64;
@@ -1175,7 +1196,12 @@ fn create_texture_image(device: &Device, command_pool: &CommandPool)
         .array_layers(1)
         .samples(SampleCountFlags::COUNT_1)
         .tiling(ImageTiling::Optimal)
-        .usage(ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED)
+        .usage(
+            // required for canvas.clear().
+            ImageUsageFlags::STORAGE |
+            ImageUsageFlags::COLOR_ATTACHMENT |
+            ImageUsageFlags::TRANSFER_DST |
+            ImageUsageFlags::SAMPLED)
         .sharing_mode(SharingMode::Exclusive)
         .initial_layout(ImageLayout::Undefined)
         .build(device.clone())?;
@@ -1198,7 +1224,7 @@ fn create_texture_image(device: &Device, command_pool: &CommandPool)
     transition_image_layout(device, command_pool, &texture_image, Format::R8G8B8A8Unorm,
         ImageLayout::TransferDstOptimal, ImageLayout::ShaderReadOnlyOptimal)?;
 
-    Ok((texture_image, texture_image_memory,(tex_width, tex_height)))
+    Ok((texture_image, texture_image_memory,(tex_width as i32, tex_height as i32)))
 }
 
 fn create_texture_image_view(device: Device, image: &Image) -> VdResult<ImageView> {
@@ -1335,6 +1361,7 @@ struct App {
     swapchain_components: Option<SwapchainComponents>,
     command_buffers: Option<SmallVec<[CommandBuffer; 16]>>,
     command_buffer_handles: Option<SmallVec<[CommandBufferHandle; 16]>>,
+    drawing_surface: skia::Surface
 }
 
 impl App {
@@ -1399,21 +1426,47 @@ impl App {
 
         let command_buffer_handles = command_buffers.iter().map(|cb| cb.handle()).collect();
 
-        let mut context: skia::Context = {
+        let mut drawing_surface: skia::Surface = {
+            let mut context: skia::Context = {
+                let queue = device.queue(0).unwrap();
 
-            let queue = device.queue(0).unwrap();
+                skia::Context::new(
+                    queue.device().instance(),
+                    queue.device().physical_device(),
+                    queue.device(),
+                    queue)
+            };
 
-            skia::Context::new(
-                queue.device().instance(),
-                queue.device().physical_device(),
-                queue.device(),
-                queue)
-        };
-
-        let drawing_surface: skia::Surface =
             skia::Surface::from_texture(
                 &mut context,
-                (&texture_image, &texture_image_memory, (texture_width, texture_height) ));
+                (&texture_image, &texture_image_memory, (texture_width, texture_height)))
+        };
+
+        dbg!((texture_width, texture_height));
+
+
+        {
+            let canvas: &mut skia::Canvas = drawing_surface.canvas();
+            // canvas.clear(skia_safe::bindings::SK_ColorCYAN);
+            let mut path = skia::Path::new();
+            path.move_to((30.0, 90.0));
+            path.line_to((110.0, 20.0));
+            path.line_to((240.0, 130.0));
+            path.line_to((60.0, 130.0));
+            path.line_to((190.0, 20.0));
+            path.line_to((270.0, 90.0));
+            path.close();
+
+            let mut paint = skia::Paint::default();
+            paint.set_color(Color::RED);
+            paint.set_anti_alias(true);
+            paint.set_stroke_width(10.0);
+            paint.set_style(PaintStyle::Stroke);
+
+            canvas.draw_path(&path, &paint);
+        }
+
+        dbg!(drawing_surface.image_layout());
 
         Ok(App {
             instance,
@@ -1447,6 +1500,7 @@ impl App {
             swapchain_components: Some(swapchain_components),
             command_buffers: Some(command_buffers),
             command_buffer_handles: Some(command_buffer_handles),
+            drawing_surface: drawing_surface
         })
     }
 
@@ -1502,6 +1556,7 @@ impl App {
         let current_time = time::Instant::now();
         let elapsed = current_time.duration_since(self.start_time);
         let time = elapsed.as_secs() as f32 + (elapsed.subsec_nanos() as f32 * 1e-9);
+        let time = 5.0;
 
         let extent = self.swapchain.as_ref().unwrap().extent().clone();
         let mut proj = cgmath::perspective(cgmath::Rad(45.0f32.to_radians()),
@@ -1531,6 +1586,44 @@ impl App {
     }
 
     fn draw_frame(&mut self) -> VdResult<()> {
+
+        // draw something into the texture.
+/*
+        {
+            let current_time = time::Instant::now();
+            let elapsed = current_time.duration_since(self.start_time);
+            let time = elapsed.as_secs() as f32 + (elapsed.subsec_nanos() as f32 * 1e-9);
+            let add = time * 100.0;
+
+
+            let mut canvas = self.drawing_surface.canvas();
+
+            // canvas.clear(skia_safe::bindings::SK_ColorCYAN);
+
+            let mut path = skia::Path::new();
+            path.move_to(30.0, 90.0);
+            path.line_to(110.0, 20.0);
+            path.line_to(240.0, 130.0);
+            // path.line_to(60.0, 130.0);
+            // path.line_to(190.0, 20.0);
+            // path.line_to(270.0, 90.0);
+            path.close();
+
+            let mut paint = skia::Paint::new();
+            paint.set_anti_alias(false);
+            paint.set_color(skia_safe::bindings::SK_ColorRED);
+            paint.set_stroke_width(10.0);
+            paint.set_style(skia_safe::bindings::SkPaint_Style_kStroke_Style);
+
+            canvas.draw_path(&path, &paint);
+            canvas.flush();
+        }
+*/
+
+        // self.drawing_surface.flush();
+
+        // dbg!(self.drawing_surface.image_layout());
+
         let acquire_result = self.swapchain.as_ref().unwrap().acquire_next_image_khr(
             u64::max_value(), Some(&self.image_available_semaphore), None);
         let image_index = match acquire_result {
@@ -1563,10 +1656,10 @@ impl App {
             .get(image_index as usize).unwrap().clone()];
 
         let submit_info = SubmitInfo::builder()
-            .wait_semaphores(&wait_semaphores[..])
+            .wait_semaphores(&wait_semaphores)
             .wait_dst_stage_mask(&wait_stages)
-            .command_buffers(&command_buffer_handles[..])
-            .signal_semaphores(&signal_semaphores[..])
+            .command_buffers(&command_buffer_handles)
+            .signal_semaphores(&signal_semaphores)
             .build();
 
         let queue = self.device.queue(0).unwrap();
@@ -1576,8 +1669,8 @@ impl App {
         let image_indices = [image_index];
 
         let present_info = PresentInfoKhr::builder()
-            .wait_semaphores(&signal_semaphores[..])
-            .swapchains(&swapchains[..])
+            .wait_semaphores(&signal_semaphores)
+            .swapchains(&swapchains)
             .image_indices(&image_indices)
             .build();
 
