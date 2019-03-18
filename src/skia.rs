@@ -5,7 +5,6 @@ use std::{ffi, ptr};
 use vks;
 use once_cell::sync;
 pub use skia_safe::skia::{Canvas, Path, Paint};
-use std::rc::Rc;
 
 pub struct Context {
     graphics: graphics::Context
@@ -114,19 +113,19 @@ impl Surface {
         let allocation_size = image.memory_requirements().size();
 
         let alloc = unsafe {
-            vulkan::Alloc::new(
+            vulkan::Alloc::from_device_memory(
                 image_memory.handle().to_raw() as _,
-                0, allocation_size, 0)
+                0, allocation_size, vulkan::AllocFlag::empty())
         };
 
         let image_info = unsafe {
-            vulkan::ImageInfo::new(
+            vulkan::ImageInfo::from_image(
                 image.handle().to_raw() as _,
-                &alloc,
+                alloc,
                 skia_bindings::VkImageTiling::VK_IMAGE_TILING_OPTIMAL,
                 skia_bindings::VkImageLayout::VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 skia_bindings::VkFormat::VK_FORMAT_R8G8B8A8_SRGB,
-                1 /* level count */
+                1, None, None /* level count */
             )
         };
 
@@ -158,6 +157,6 @@ impl Surface {
     pub fn image_layout(&mut self) -> skia_bindings::VkImageLayout {
         let texture = self.surface.get_backend_texture(skia_bindings::SkSurface_BackendHandleAccess::kFlushRead_BackendHandleAccess).unwrap();
         let image_info = texture.get_image_info().unwrap();
-        image_info.layout()
+        image_info.layout
     }
 }

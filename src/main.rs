@@ -8,7 +8,6 @@ extern crate cgmath;
 mod skia;
 
 use std::{mem, time, path::Path };
-use std::rc::Rc;
 use std::hash::{Hash, Hasher};
 use std::collections::{HashMap, BTreeSet};
 use std::ffi::{CStr, CString};
