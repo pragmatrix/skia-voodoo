@@ -1,10 +1,11 @@
 use voodoo::*;
-use skia_safe::{skia, graphics, graphics::vulkan};
 use std::os::raw;
 use std::{ffi, ptr};
 use vks;
 use once_cell::sync;
-pub use skia_safe::skia::{Canvas, Path, Paint};
+use skia_safe::{skia, graphics, graphics::vulkan};
+pub use skia_safe::skia::{Canvas, Path, Paint, ColorType, SurfaceBackendHandleAccess};
+use skia_safe::graphics::SurfaceOrigin;
 
 pub struct Context {
     graphics: graphics::Context
@@ -84,14 +85,14 @@ impl Context {
 
         let backend = unsafe {
             vulkan::BackendContext::new(
-                instance.handle().to_raw() as *mut _,
-                physical_device.handle().to_raw() as *mut _,
-                device.handle().to_raw() as *mut _,
-                queue.handle().to_raw() as *mut _,
+                instance.handle().to_raw() as _,
+                physical_device.handle().to_raw() as _,
+                device.handle().to_raw() as _,
+                queue.handle().to_raw() as _,
                 queue.index(),
                 Some(resolve)) };
 
-        let graphics = graphics::Context::from_vulkan(&backend).unwrap();
+        let graphics = graphics::Context::new_vulkan(&backend).unwrap();
 
         Context {
             graphics
@@ -137,9 +138,10 @@ impl Surface {
             skia::Surface::from_backend_texture(
                 &mut context.graphics,
                 &backend_texture,
-                skia_bindings::GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
-                /* sample_count */ 1,
-                skia_bindings::SkColorType::kRGBA_8888_SkColorType
+                SurfaceOrigin::TopLeft,
+                None,
+                ColorType::RGBA8888,
+                None, None
             ).unwrap();
 
         Surface { surface }
@@ -155,8 +157,8 @@ impl Surface {
 
     // Use to retrieve the current layout the image is in.
     pub fn image_layout(&mut self) -> skia_bindings::VkImageLayout {
-        let texture = self.surface.get_backend_texture(skia_bindings::SkSurface_BackendHandleAccess::kFlushRead_BackendHandleAccess).unwrap();
-        let image_info = texture.get_image_info().unwrap();
+        let texture = self.surface.backend_texture(SurfaceBackendHandleAccess::FlushRead).unwrap();
+        let image_info = texture.vulkan_image_info().unwrap();
         image_info.layout
     }
 }
