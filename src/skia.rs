@@ -88,9 +88,9 @@ impl Context {
                 instance.handle().to_raw() as _,
                 physical_device.handle().to_raw() as _,
                 device.handle().to_raw() as _,
-                queue.handle().to_raw() as _,
-                queue.index(),
-                Some(resolve)) };
+                (queue.handle().to_raw() as _, queue.index() as _),
+                Some(resolve))
+        };
 
         let graphics = graphics::Context::new_vulkan(&backend).unwrap();
 
