@@ -1,6 +1,5 @@
 use voodoo::*;
-use std::os::raw;
-use std::{ffi, ptr};
+use std::{ptr, os::raw, ffi::CStr};
 use vks;
 use once_cell::sync;
 use skia_safe::{skia, graphics, graphics::vulkan};
@@ -18,22 +17,21 @@ fn instance_loader() -> &'static Loader {
     })
 }
 
-static mut GET_DEVICE_PROC_ADDR : vks::PFN_vkGetDeviceProcAddr = None;
-
-unsafe extern "C" fn resolve(
-    name: *const raw::c_char,
-    instance: skia_bindings::VkInstance,
-    device: skia_bindings::VkDevice)
+unsafe fn resolve(
+    get_device_proc_addr: vks::PFN_vkGetDeviceProcAddr,
+    name: &CStr,
+    instance: vulkan::Instance,
+    device: vulkan::Device)
     -> *const raw::c_void {
 
-    let get_str = || ffi::CStr::from_ptr(name).to_str().unwrap();
+    let get_str = || name.to_str().unwrap();
 
     if !device.is_null() {
         let device = device as vks::VkDevice;
 
-        let get_device_proc = GET_DEVICE_PROC_ADDR.unwrap();
+        let get_device_proc = get_device_proc_addr.unwrap();
 
-        match get_device_proc(device, name) {
+        match get_device_proc(device, name.as_ptr() as _) {
             Some(f) => {
                 f as _
             },
@@ -52,7 +50,7 @@ unsafe extern "C" fn resolve(
                 .get_instance_proc_addr()
                 .unwrap();
 
-        match instance_proc_addr(instance, name) {
+        match instance_proc_addr(instance, name.as_ptr() as _) {
             Some(f) => {
                 f as _
             },
@@ -79,9 +77,10 @@ impl Context {
                 .vk.pfn_vkGetDeviceProcAddr.
                 unwrap();
 
-        unsafe {
-            GET_DEVICE_PROC_ADDR = Some(get_device_proc_addr);
-        }
+        let resolve = |name, instance, device| unsafe {
+            let name = CStr::from_ptr(name);
+            resolve(Some(get_device_proc_addr), name, instance, device)
+        };
 
         let backend = unsafe {
             vulkan::BackendContext::new(
@@ -89,7 +88,7 @@ impl Context {
                 physical_device.handle().to_raw() as _,
                 device.handle().to_raw() as _,
                 (queue.handle().to_raw() as _, queue.index() as _),
-                Some(resolve))
+                &resolve)
         };
 
         let graphics = graphics::Context::new_vulkan(&backend).unwrap();
