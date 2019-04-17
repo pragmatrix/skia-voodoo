@@ -40,7 +40,7 @@ use vd::{vks, util, Result as VdResult, Instance, Device, SurfaceKhr,
     CallResult, PresentInfoKhr, ErrorKind, VertexInputBindingDescription, VertexInputRate,
     VertexInputAttributeDescription};
 use voodoo_winit::winit::{EventsLoop, WindowBuilder, Window, Event, WindowEvent};
-use skia_safe::skia::{PaintStyle, Color};
+use skia_safe::{PaintStyle, Color};
 
 #[cfg(debug_assertions)]
 pub const ENABLE_VALIDATION_LAYERS: bool = true;

@@ -2,12 +2,12 @@ use voodoo::*;
 use std::{ptr, os::raw, ffi::CStr};
 use vks;
 use once_cell::sync;
-use skia_safe::{skia, graphics, graphics::vulkan};
-pub use skia_safe::skia::{Canvas, Path, Paint, ColorType, SurfaceBackendHandleAccess};
-use skia_safe::graphics::SurfaceOrigin;
+use skia_safe::{gpu, gpu::vk};
+pub use skia_safe::{Canvas, Path, Paint, ColorType, SurfaceBackendHandleAccess};
+use skia_safe::gpu::SurfaceOrigin;
 
 pub struct Context {
-    graphics: graphics::Context
+    graphics: gpu::Context
 }
 
 fn instance_loader() -> &'static Loader {
@@ -20,8 +20,8 @@ fn instance_loader() -> &'static Loader {
 unsafe fn resolve(
     get_device_proc_addr: vks::PFN_vkGetDeviceProcAddr,
     name: &CStr,
-    instance: vulkan::Instance,
-    device: vulkan::Device)
+    instance: vk::Instance,
+    device: vk::Device)
     -> *const raw::c_void {
 
     let get_str = || name.to_str().unwrap();
@@ -77,13 +77,21 @@ impl Context {
                 .vk.pfn_vkGetDeviceProcAddr.
                 unwrap();
 
-        let resolve = |name, instance, device| unsafe {
-            let name = CStr::from_ptr(name);
-            resolve(Some(get_device_proc_addr), name, instance, device)
+        let resolve = |gpo| unsafe {
+            match gpo {
+                vk::GetProcOf::Device(device, name) => {
+                    let name = CStr::from_ptr(name);
+                    resolve(Some(get_device_proc_addr), name, ptr::null_mut(), device)
+                }
+                vk::GetProcOf::Instance(instance, name) => {
+                    let name = CStr::from_ptr(name);
+                    resolve(Some(get_device_proc_addr), name, instance, ptr::null_mut())
+                }
+            }
         };
 
         let backend = unsafe {
-            vulkan::BackendContext::new(
+            vk::BackendContext::new(
                 instance.handle().to_raw() as _,
                 physical_device.handle().to_raw() as _,
                 device.handle().to_raw() as _,
@@ -91,7 +99,7 @@ impl Context {
                 &resolve)
         };
 
-        let graphics = graphics::Context::new_vulkan(&backend).unwrap();
+        let graphics = gpu::Context::new_vulkan(&backend).unwrap();
 
         Context {
             graphics
@@ -100,7 +108,7 @@ impl Context {
 }
 
 pub struct Surface {
-    surface: skia::Surface
+    surface: skia_safe::Surface
 }
 
 impl Surface {
@@ -113,13 +121,13 @@ impl Surface {
         let allocation_size = image.memory_requirements().size();
 
         let alloc = unsafe {
-            vulkan::Alloc::from_device_memory(
+            vk::Alloc::from_device_memory(
                 image_memory.handle().to_raw() as _,
-                0, allocation_size, vulkan::AllocFlag::empty())
+                0, allocation_size, vk::AllocFlag::empty())
         };
 
         let image_info = unsafe {
-            vulkan::ImageInfo::from_image(
+            vk::ImageInfo::from_image(
                 image.handle().to_raw() as _,
                 alloc,
                 skia_bindings::VkImageTiling::VK_IMAGE_TILING_OPTIMAL,
@@ -130,11 +138,11 @@ impl Surface {
         };
 
         let backend_texture = unsafe {
-            graphics::BackendTexture::new_vulkan((width, height), &image_info)
+            gpu::BackendTexture::new_vulkan((width, height), &image_info)
         };
 
         let surface =
-            skia::Surface::from_backend_texture(
+            skia_safe::Surface::from_backend_texture(
                 &mut context.graphics,
                 &backend_texture,
                 SurfaceOrigin::TopLeft,
@@ -146,7 +154,7 @@ impl Surface {
         Surface { surface }
     }
 
-    pub fn canvas(&mut self) -> &mut skia::Canvas {
+    pub fn canvas(&mut self) -> &mut skia_safe::Canvas {
         self.surface.canvas()
     }
 
